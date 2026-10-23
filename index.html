@@ -105,6 +105,20 @@ body.navigating #fabs{top:calc(var(--st) + 104px)}
 .me .cone{position:absolute;left:-14px;top:-30px;width:52px;height:52px;transform-origin:26px 42px;opacity:0;transition:transform .4s}
 .me .cone.show{opacity:1}
 
+.pin{position:relative}
+.pin-n{position:absolute;top:-6px;right:-9px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:var(--navy);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;border:2px solid #fff}
+.same{margin:10px 0 2px;padding:10px 12px;border-radius:12px;background:var(--soft)}
+.same-lbl{font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:18px;padding:7px 12px;font-size:14px;font-weight:600}
+.chip.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.leaflet-tooltip.tip{background:var(--panel);color:var(--ink);border:0;border-radius:12px;box-shadow:var(--shadow);padding:10px 12px;font:13px/1.4 "Helvetica Neue",Helvetica,Arial,sans-serif;max-width:300px;white-space:normal;min-width:200px}
+.leaflet-tooltip.tip::before{border-top-color:var(--panel)}
+.tip-c + .tip-c{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.tip-c b{display:block;font-size:14px;margin-bottom:3px}
+.tip-kv{display:flex;gap:8px}
+.tip-kv span:first-child{color:var(--muted);flex:none}
+.tip-note{margin-top:8px;font-size:12px;font-weight:600;color:var(--orange)}
 #toast{position:fixed;z-index:1100;left:50%;bottom:calc(var(--sb) + 24px);transform:translateX(-50%) translateY(20px);background:#15173a;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;max-width:90vw;opacity:0;pointer-events:none;transition:.25s;text-align:center}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 body.sheet-open #toast{bottom:calc(var(--sb) + 200px)}
@@ -198,8 +212,24 @@ const meIcon = L.divIcon({ className:'pin-wrap', iconSize:[24,24], iconAnchor:[1
   html:`<div class="me"><svg class="cone" viewBox="0 0 52 52"><defs><linearGradient id="cg" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#1a73e8" stop-opacity=".55"/><stop offset="1" stop-color="#1a73e8" stop-opacity="0"/></linearGradient></defs><path d="M26 42 L8 6 A40 40 0 0 1 44 6 Z" fill="url(#cg)"/></svg><div class="dot"></div></div>` });
 const meMarker = L.marker([0,0], { icon:meIcon, zIndexOffset:2000, interactive:false });
 
-const pinIcon = sel => L.divIcon({ className:'pin-wrap', iconSize:sel?[38,50]:[30,40], iconAnchor:sel?[19,49]:[15,39],
-  html:`<svg viewBox="0 0 30 40" width="${sel?38:30}" height="${sel?50:40}"><path d="M15 39s13-13.6 13-24A13 13 0 0 0 2 15c0 10.4 13 24 13 24z" fill="${sel?'#0F1376':'#FF5200'}" stroke="#fff" stroke-width="2"/><circle cx="15" cy="15" r="5" fill="#fff"/></svg>` });
+const pinIcon = (sel, n = 1) => L.divIcon({ className:'pin-wrap', iconSize:sel?[38,50]:[30,40], iconAnchor:sel?[19,49]:[15,39],
+  html:`<div class="pin"><svg viewBox="0 0 30 40" width="${sel?38:30}" height="${sel?50:40}"><path d="M15 39s13-13.6 13-24A13 13 0 0 0 2 15c0 10.4 13 24 13 24z" fill="${sel?'#0F1376':'#FF5200'}" stroke="#fff" stroke-width="2"/><circle cx="15" cy="15" r="5" fill="#fff"/></svg>${n > 1 ? `<span class="pin-n">${n}</span>` : ''}</div>` });
+// Clientes que comparten exactamente la misma ubicación (hasta ~1 m) van en un mismo pin
+const spotKey = c => `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`;
+let spots = {};
+const groupOf = c => spots[spotKey(c)] || [c];
+function setPin(c, sel){
+  const m = markers[c.id]; if (!m) return;
+  m.setIcon(pinIcon(sel, groupOf(c).length)); m.setZIndexOffset(sel ? 1000 : 0);
+}
+const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+function tipHtml(group){
+  return group.map(c => {
+    const rows = Object.entries(c.extra).slice(0, 8)
+      .map(([k,v]) => `<div class="tip-kv"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join('');
+    return `<div class="tip-c"><b>${esc(c.name)}</b>${rows}</div>`;
+  }).join('') + (group.length > 1 ? `<div class="tip-note">${group.length} clientes en esta ubicación</div>` : '');
+}
 
 /* ---------- Utilidades ---------- */
 const R = 6371000, rad = d => d*Math.PI/180;
@@ -226,11 +256,16 @@ function speak(t){
 
 /* ---------- Clientes ---------- */
 function renderClients(){
-  cluster.clearLayers(); markers = {};
-  clients.forEach(c => {
-    const m = L.marker([c.lat, c.lng], { icon:pinIcon(selected && selected.id === c.id) });
-    m.on('click', () => selectClient(c));
-    markers[c.id] = m; cluster.addLayer(m);
+  cluster.clearLayers(); markers = {}; spots = {};
+  clients.forEach(c => (spots[spotKey(c)] ||= []).push(c));
+  Object.values(spots).forEach(group => {
+    const first = group[0];
+    const sel = !!selected && group.some(c => c.id === selected.id);
+    const m = L.marker([first.lat, first.lng], { icon:pinIcon(sel, group.length), zIndexOffset: sel ? 1000 : 0 });
+    m.on('click', () => selectClient(selected && spotKey(selected) === spotKey(first) ? selected : first));
+    if (canHover) m.bindTooltip(tipHtml(group), { direction:'top', offset:[0,-36], className:'tip', opacity:1 });
+    group.forEach(c => markers[c.id] = m);
+    cluster.addLayer(m);
   });
   $('#count').textContent = clients.length;
   renderList();
@@ -247,17 +282,18 @@ function renderList(){
     : `<p style="padding:16px;color:var(--muted)">${clients.length ? 'Ningún cliente coincide con la búsqueda.' : 'Aún no hay clientes. Carga tu Excel con las columnas Nombre, Latitud y Longitud.'}</p>`;
 }
 function selectClient(c){
+  if (selected && spotKey(selected) === spotKey(c)) { selected = c; renderSheet(); return; }
   if (nav) stopNav();
-  if (selected && markers[selected.id]) markers[selected.id].setIcon(pinIcon(false));
+  if (selected) setPin(selected, false);
   selected = c; route = null; lastSpoken = -1;
-  if (markers[c.id]) { markers[c.id].setIcon(pinIcon(true)); markers[c.id].setZIndexOffset(1000); }
+  setPin(c, true);
   renderSheet();
   if (userLL) planRoute();
   else { pendingRoute = true; startGPS(); map.setView([c.lat, c.lng], Math.max(map.getZoom(), 15)); }
 }
 function clearSelection(){
   if (nav) stopNav();
-  if (selected && markers[selected.id]) markers[selected.id].setIcon(pinIcon(false));
+  if (selected) setPin(selected, false);
   selected = null; route = null; pendingRoute = false;
   map.removeLayer(routeLine); map.removeLayer(routeCasing);
   renderSheet();
@@ -559,7 +595,7 @@ function renderSheet(){
   sh.hidden = false; document.body.classList.add('sheet-open');
   if (nav) {
     sh.className = 'compact';
-    sh.innerHTML = `<div class="row"><div style="flex:1;min-width:0"><div class="eta" id="sumMain">—</div><div class="sub"><span id="sumSub"></span><br>${esc(c.name)}</div></div>
+    sh.innerHTML = `<div class="row"><div style="flex:1;min-width:0"><div class="eta" id="sumMain">—</div><div class="sub"><span id="sumSub"></span><br>${esc(groupOf(c).map(x => x.name).join(' / '))}</div></div>
       <button class="btn stop" data-act="stop">Terminar</button></div>`;
     return;
   }
@@ -567,9 +603,15 @@ function renderSheet(){
     const isTel = /tel|cel|movil|whats/.test(norm(k)) && /\d{7,}/.test(v.replace(/\D/g,''));
     return `<div class="kv"><span>${esc(k)}</span><span>${isTel ? `<a href="tel:${esc(v.replace(/[^\d+]/g,''))}">${esc(v)}</a>` : esc(v)}</span></div>`;
   }).join('');
+  const group = groupOf(c);
+  const chips = group.length > 1 ? `<div class="same">
+      <div class="same-lbl">${group.length} clientes en esta misma ubicación</div>
+      <div class="chips">${group.map(x => `<button class="chip ${x.id === c.id ? 'on' : ''}" data-act="pick" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>
+    </div>` : '';
   sh.className = '';
   sh.innerHTML = `<div class="grab"></div>
     <div class="s-head"><h2>${esc(c.name)}</h2><button class="x" data-act="close" aria-label="Cerrar">${icClose}</button></div>
+    ${chips}
     <div class="sum"><span class="sum-main" id="sumMain">${userLL ? 'Calculando ruta…' : 'Esperando tu ubicación…'}</span><span class="sum-sub" id="sumSub"></span></div>
     <div class="seg" role="group" aria-label="Forma de traslado">
       <button data-act="mode" data-mode="car" class="${mode==='car'?'on':''}">En auto</button>
@@ -587,6 +629,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act;
   if (a === 'close') clearSelection();
+  else if (a === 'pick') { const x = clients.find(k => k.id === b.dataset.id); if (x) selectClient(x); }
   else if (a === 'start') startNav();
   else if (a === 'stop') stopNav();
   else if (a === 'template') downloadTemplate();
