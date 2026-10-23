@@ -121,9 +121,32 @@ body.navigating #fabs{top:calc(var(--st) + 104px)}
 .tip-kv{display:flex;gap:8px}
 .tip-kv span:first-child{color:var(--muted);flex:none}
 .tip-note{margin-top:8px;font-size:12px;font-weight:600;color:var(--orange)}
-#toast{position:fixed;z-index:1100;left:50%;bottom:calc(var(--sb) + 24px);transform:translateX(-50%) translateY(20px);background:#15173a;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;max-width:90vw;opacity:0;pointer-events:none;transition:.25s;text-align:center}
+#styleMenu{position:absolute;right:58px;top:0;width:240px;background:var(--panel);border-radius:14px;box-shadow:var(--shadow);padding:6px;z-index:2}
+.sm-title{font-size:13px;font-weight:600;color:var(--muted);padding:8px 10px 6px}
+#styleMenu button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:9px 10px;border-radius:10px;font-size:15px;text-align:left}
+#styleMenu button.on{background:var(--soft);font-weight:700}
+#styleMenu .sw{width:26px;height:26px;border-radius:7px;flex:none;border:1px solid rgba(0,0,0,.15)}
+.loc{margin:8px 0 4px;padding:10px 12px;border-radius:12px;background:var(--soft);font-size:14px;display:flex;flex-direction:column;gap:6px}
+.loc b{font-weight:600}
+.loc.warn{background:rgba(255,82,0,.1)}
+.loc.warn b{color:#c43f00}
+@media (prefers-color-scheme:dark){.loc.warn b{color:#ff9a66}}
+.loc span{color:var(--muted)}
+.loc-b{display:flex;gap:8px;flex-wrap:wrap}
+.loc-b button{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);border-radius:18px;padding:6px 12px;font-size:13px;font-weight:600}
+.loc-b svg,.btn svg{width:18px;height:18px}
+.hint{font-size:13px;color:var(--muted);margin:10px 0 0;line-height:1.4}
+.list-sec{padding:10px 16px 6px;font-size:13px;font-weight:600;color:var(--muted);background:var(--soft)}
+.item .nm small{display:block;font-weight:400;font-size:12px;color:#c43f00}
+.item .dotc.aprox{background:transparent;border:2px dashed var(--orange)}
+.item .dotc.lost{background:var(--line)}
+.dr-foot{flex-wrap:wrap}
+.dr-foot .btn{flex:1 1 40%}
+.dr-foot .btn.wide{flex-basis:100%}
+#toast{position:fixed;z-index:1100;left:50%;top:calc(var(--st) + 66px);transform:translateX(-50%) translateY(-12px);background:#15173a;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;max-width:90vw;opacity:0;pointer-events:none;transition:.25s;text-align:center}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-body.sheet-open #toast{bottom:calc(var(--sb) + 200px)}
+body.navigating #toast{top:calc(var(--st) + 110px)}
+#toast{max-width:min(90vw,340px)}
 .leaflet-control-attribution{font-size:10px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -149,7 +172,8 @@ body.sheet-open #toast{bottom:calc(var(--sb) + 200px)}
 </div>
 
 <div id="fabs">
-  <button class="fab" id="fLayer" aria-label="Cambiar a vista satélite"><span class="tag" id="layerTag">Calles</span>
+  <div id="styleMenu" hidden role="menu" aria-label="Estilo del mapa"></div>
+  <button class="fab" id="fLayer" aria-label="Cambiar estilo del mapa">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>
   <button class="fab" id="fLocate" aria-label="Seguir mi ubicación">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
@@ -168,7 +192,8 @@ body.sheet-open #toast{bottom:calc(var(--sb) + 200px)}
     <div class="list" id="list"></div>
     <div class="dr-foot">
       <label class="btn primary" for="file" tabindex="0">Cargar Excel</label>
-      <button class="btn second" data-act="template">Descargar plantilla</button>
+      <button class="btn second" data-act="template">Plantilla</button>
+      <button class="btn second wide" data-act="export">Exportar Excel con ubicaciones</button>
     </div>
   </div>
 </div>
@@ -188,19 +213,30 @@ const store = {
 const map = L.map('map', { zoomControl:false, minZoom:4, rotate:true, bearing:0, rotateControl:false, touchRotate:false })
   .setView([23.6,-102.5], 5);
 map.attributionControl.setPrefix(false);
-// Mapa de calles de Esri (no pide clave ni encabezado Referer; funciona también abriendo el archivo local).
-const baseCalles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom:19, attribution:'Mapa © Esri, HERE, Garmin, INEGI, OpenStreetMap' });
-const baseSat = L.layerGroup([
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Imágenes © Esri' }),
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 }),
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 })
-]);
-let sat = store.get('rc_sat', false);
-(sat ? baseSat : baseCalles).addTo(map);
+// Estilos de mapa (Esri, sin clave). Se recuerda el último elegido.
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+const tl = (path, o = {}) => L.tileLayer(ESRI + path + '/MapServer/tile/{z}/{y}/{x}', Object.assign({ maxZoom:19 }, o));
+const ATTR = 'Mapa © Esri, HERE, Garmin, INEGI, OpenStreetMap';
+const STYLES = {
+  calles: { name:'Calles', sw:'linear-gradient(135deg,#f4efe4 50%,#f6c26b 50%)', route:['#0F1376','#ffffff'],
+            layer: () => tl('World_Street_Map', { attribution:ATTR }) },
+  claro:  { name:'Gris claro', sw:'linear-gradient(135deg,#f3f3f3 50%,#c9c9c9 50%)', route:['#0F1376','#ffffff'],
+            layer: () => L.layerGroup([tl('Canvas/World_Light_Gray_Base', { maxNativeZoom:16, attribution:ATTR }), tl('Canvas/World_Light_Gray_Reference', { maxNativeZoom:16 })]) },
+  oscuro: { name:'Oscuro (noche)', sw:'linear-gradient(135deg,#2b2d33 50%,#55585f 50%)', route:['#5b8cff','#10121f'],
+            layer: () => L.layerGroup([tl('Canvas/World_Dark_Gray_Base', { maxNativeZoom:16, attribution:ATTR }), tl('Canvas/World_Dark_Gray_Reference', { maxNativeZoom:16 })]) },
+  topo:   { name:'Topográfico', sw:'linear-gradient(135deg,#dfe8cf 50%,#b9a37c 50%)', route:['#0F1376','#ffffff'],
+            layer: () => tl('World_Topo_Map', { attribution:ATTR }) },
+  sat:    { name:'Satélite', sw:'linear-gradient(135deg,#3d5a2a 50%,#8a7a5a 50%)', route:['#1e88ff','#ffffff'],
+            layer: () => L.layerGroup([tl('World_Imagery', { attribution:'Imágenes © Esri' }), tl('Reference/World_Transportation'), tl('Reference/World_Boundaries_and_Places')]) }
+};
+const darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
+let styleChoice = store.get('rc_style', store.get('rc_sat', false) ? 'sat' : 'calles');
+let baseLayer = null, activeStyle = null;
 
 /* ---------- Estado ---------- */
 let clients = store.get('rc_clients', []);
+let unlocated = store.get('rc_unlocated', []);   // clientes cuya dirección no se encontró
+function save(){ store.set('rc_clients', clients); store.set('rc_unlocated', unlocated); }
 let selected = null, markers = {};
 let userLL = null, userAcc = 0, lastLL = null, heading = null, watchId = null, firstFix = true;
 let follow = true, nav = false, mode = store.get('rc_mode', 'car');
@@ -212,20 +248,33 @@ let voiceOn = store.get('rc_voice', true), lastSpoken = -1, spokeNear = false, w
 const cluster = L.layerGroup().addTo(map);
 const routeCasing = L.polyline([], { color:'#ffffff', weight:11, opacity:.95, lineCap:'round', lineJoin:'round' });
 const routeLine = L.polyline([], { color:'#0F1376', weight:7, opacity:.95, lineCap:'round', lineJoin:'round' });
+function applyStyle(){
+  const key = styleChoice === 'auto' ? (darkMQ.matches ? 'oscuro' : 'calles') : styleChoice;
+  if (key !== activeStyle) {
+    if (baseLayer) map.removeLayer(baseLayer);
+    baseLayer = STYLES[key].layer().addTo(map); baseLayer.bringToBack?.();
+    activeStyle = key;
+  }
+  const [line, casing] = STYLES[key].route;
+  routeLine.setStyle({ color:line }); routeCasing.setStyle({ color:casing });
+  document.querySelectorAll('#styleMenu [data-style]').forEach(b => b.classList.toggle('on', b.dataset.style === styleChoice));
+}
+darkMQ.addEventListener?.('change', () => { if (styleChoice === 'auto') applyStyle(); });
 const accCircle = L.circle([0,0], { radius:1, color:'#1a73e8', weight:1, fillColor:'#1a73e8', fillOpacity:.12, interactive:false });
 const meIcon = L.divIcon({ className:'pin-wrap', iconSize:[24,24], iconAnchor:[12,12],
   html:`<div class="me"><svg class="cone" viewBox="0 0 52 52"><defs><linearGradient id="cg" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#1a73e8" stop-opacity=".55"/><stop offset="1" stop-color="#1a73e8" stop-opacity="0"/></linearGradient></defs><path d="M26 42 L8 6 A40 40 0 0 1 44 6 Z" fill="url(#cg)"/></svg><div class="dot"></div></div>` });
 const meMarker = L.marker([0,0], { icon:meIcon, zIndexOffset:2000, interactive:false });
 
-const pinIcon = (sel, n = 1) => L.divIcon({ className:'pin-wrap', iconSize:sel?[38,50]:[30,40], iconAnchor:sel?[19,49]:[15,39],
-  html:`<div class="pin"><svg viewBox="0 0 30 40" width="${sel?38:30}" height="${sel?50:40}"><path d="M15 39s13-13.6 13-24A13 13 0 0 0 2 15c0 10.4 13 24 13 24z" fill="${sel?'#0F1376':'#FF5200'}" stroke="#fff" stroke-width="2"/><circle cx="15" cy="15" r="5" fill="#fff"/></svg>${n > 1 ? `<span class="pin-n">${n}</span>` : ''}</div>` });
+const pinIcon = (sel, n = 1, approx = false) => L.divIcon({ className:'pin-wrap', iconSize:sel?[38,50]:[30,40], iconAnchor:sel?[19,49]:[15,39],
+  html:`<div class="pin"><svg viewBox="0 0 30 40" width="${sel?38:30}" height="${sel?50:40}"><path d="M15 39s13-13.6 13-24A13 13 0 0 0 2 15c0 10.4 13 24 13 24z" fill="${approx ? '#ffffff' : sel?'#0F1376':'#FF5200'}" stroke="${approx ? (sel?'#0F1376':'#FF5200') : '#fff'}" stroke-width="${approx ? 3 : 2}" ${approx ? 'stroke-dasharray="4 2.5"' : ''}/><circle cx="15" cy="15" r="5" fill="${approx ? (sel?'#0F1376':'#FF5200') : '#fff'}"/></svg>${n > 1 ? `<span class="pin-n">${n}</span>` : ''}</div>` });
 // Clientes que comparten exactamente la misma ubicación (hasta ~1 m) van en un mismo pin
-const spotKey = c => `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`;
+const spotKey = c => c.lat == null ? 'sin:' + c.id : `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`;
+const isApprox = group => group.every(c => c.src === 'direccion');
 let spots = {};
 const groupOf = c => spots[spotKey(c)] || [c];
 function setPin(c, sel){
   const m = markers[c.id]; if (!m) return;
-  m.setIcon(pinIcon(sel, groupOf(c).length)); m.setZIndexOffset(sel ? 1000 : 0);
+  m.setIcon(pinIcon(sel, groupOf(c).length, isApprox(groupOf(c)))); m.setZIndexOffset(sel ? 1000 : 0);
 }
 const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 function tipHtml(group){
@@ -266,7 +315,7 @@ function renderClients(){
   Object.values(spots).forEach(group => {
     const first = group[0];
     const sel = !!selected && group.some(c => c.id === selected.id);
-    const m = L.marker([first.lat, first.lng], { icon:pinIcon(sel, group.length), zIndexOffset: sel ? 1000 : 0 });
+    const m = L.marker([first.lat, first.lng], { icon:pinIcon(sel, group.length, isApprox(group)), zIndexOffset: sel ? 1000 : 0 });
     m.on('click', () => selectClient(selected && spotKey(selected) === spotKey(first) ? selected : first));
     if (canHover) m.bindTooltip(tipHtml(group), { direction:'top', offset:[0,-36], className:'tip', opacity:1 });
     group.forEach(c => markers[c.id] = m);
@@ -278,13 +327,34 @@ function renderClients(){
 }
 function renderList(){
   const q = norm($('#search').value);
-  const rows = clients
-    .filter(c => !q || norm(c.name).includes(q) || Object.values(c.extra).some(v => norm(v).includes(q)))
+  const match = c => !q || norm(c.name).includes(q) || Object.values(c.extra).some(v => norm(v).includes(q));
+  const rows = clients.filter(match)
     .map(c => ({ c, d: userLL ? hav([userLL.lat,userLL.lng],[c.lat,c.lng]) : null }))
     .sort((a,b) => a.d != null && b.d != null ? a.d - b.d : a.c.name.localeCompare(b.c.name));
-  $('#list').innerHTML = rows.length ? rows.map(({c,d}) =>
-    `<button class="item" data-id="${esc(c.id)}"><span class="dotc"></span><span class="nm">${esc(c.name)}</span><span class="km">${d != null ? fmtDist(d) : ''}</span></button>`).join('')
-    : `<p style="padding:16px;color:var(--muted)">${clients.length ? 'Ningún cliente coincide con la búsqueda.' : 'Aún no hay clientes. Carga tu Excel con las columnas Nombre, Latitud y Longitud.'}</p>`;
+  const lost = unlocated.filter(match);
+  const lostHtml = lost.length ? `<div class="list-sec">Sin ubicar (${lost.length}) · toca para fijar su ubicación en campo</div>` +
+    lost.map(c => `<button class="item" data-id="${esc(c.id)}"><span class="dotc lost"></span><span class="nm">${esc(c.name)}</span><span class="km">sin ubicar</span></button>`).join('') +
+    (rows.length ? '<div class="list-sec">Ubicados</div>' : '') : '';
+  $('#list').innerHTML = (rows.length || lost.length) ? lostHtml + rows.map(({c,d}) =>
+    `<button class="item" data-id="${esc(c.id)}"><span class="dotc ${c.src === 'direccion' ? 'aprox' : ''}"></span><span class="nm">${esc(c.name)}${c.src === 'direccion' ? '<small>ubicación aproximada</small>' : ''}</span><span class="km">${d != null ? fmtDist(d) : ''}</span></button>`).join('')
+    : `<p style="padding:16px;color:var(--muted)">${clients.length ? 'Ningún cliente coincide con la búsqueda.' : 'Aún no hay clientes. Carga tu Excel con Nombre y Latitud/Longitud o Dirección.'}</p>`;
+}
+function openUnlocated(c){
+  if (nav) stopNav();
+  if (selected) setPin(selected, false);
+  selected = c; route = null; pendingRoute = false;
+  map.removeLayer(routeLine); map.removeLayer(routeCasing);
+  renderSheet();
+}
+function setClientLocation(c, lat, lng, src = 'campo', level){
+  const i = unlocated.findIndex(x => x.id === c.id);
+  if (i >= 0) { unlocated.splice(i, 1); clients.push(c); }
+  c.lat = lat; c.lng = lng; c.src = src;
+  if (level) c.level = level; else delete c.level;
+  save(); route = null; selected = c;
+  renderClients(); setPin(c, true); renderSheet();
+  map.setView([lat, lng], Math.max(map.getZoom(), 16));
+  if (userLL) planRoute();
 }
 function selectClient(c){
   startCompass();
@@ -311,41 +381,144 @@ const num = v => typeof v === 'number' ? v : parseFloat(String(v).trim().replace
 function pickKey(keys, exact, starts){
   return keys.find(k => exact.includes(norm(k))) || keys.find(k => starts.some(s => norm(k).startsWith(s)));
 }
-function importRows(rows){
+let importToken = 0;
+async function importRows(rows){
   if (!rows.length) { toast('El archivo no tiene filas con datos.'); return; }
   const keys = Object.keys(rows.reduce((a,r) => Object.assign(a,r), {}));
   const kLat = pickKey(keys, ['latitud','lat','latitude','y'], ['latitud','lat ']);
   const kLng = pickKey(keys, ['longitud','lng','lon','long','longitude','x'], ['longitud','lng ','lon ']);
   const kCoord = pickKey(keys, ['coordenadas','coordenada','coords','gps','ubicacion','geolocalizacion'], ['coordenada','geoloc']);
   const kName = pickKey(keys, ['nombre','cliente','nombre del cliente','nombre cliente','nombre completo','acreditada','name','razon social'], ['nombre','cliente','acreditad']);
-  if (!(kLat && kLng) && !kCoord) {
-    toast('No encontré columnas de Latitud y Longitud. Revisa los encabezados o usa la plantilla.', 5500); return;
+  const kAddr = pickKey(keys, ['direccion','domicilio','calle','direccion completa','domicilio completo','calle y numero','address'], ['direcc','domicil']);
+  const kCol = pickKey(keys, ['colonia','barrio','fraccionamiento'], ['colonia','barrio']);
+  const kLoc = pickKey(keys, ['localidad','comunidad','poblado','ejido','rancheria','ciudad'], ['localidad','comunidad']);
+  const kMun = pickKey(keys, ['municipio','alcaldia'], ['municip']);
+  const kEdo = pickKey(keys, ['estado','entidad','entidad federativa'], ['entidad']);
+  const kCP = pickKey(keys, ['cp','c.p.','c.p','c p','codigo postal'], ['codigo postal']);
+  const kSrc = keys.find(k => norm(k) === 'origen de la ubicacion'), kPrec = keys.find(k => norm(k) === 'precision');
+  const addrKeys = [...new Set([kAddr,kCol,kLoc,kMun,kEdo].filter(Boolean))];
+  if (!(kLat && kLng) && !kCoord && !addrKeys.length && !kCP) {
+    toast('No encontré columnas de Latitud y Longitud ni de Dirección. Revisa los encabezados o usa la plantilla.', 6000); return;
   }
-  let skipped = 0;
-  const out = [];
+  const stamp = Date.now().toString(36);
+  const out = [], pending = []; let skipped = 0;
   rows.forEach((r, i) => {
+    const name = kName ? String(r[kName] || `Cliente ${i+1}`) : `Cliente ${i+1}`;
+    const extra = {};
+    keys.forEach(k => { if (![kLat,kLng,kCoord,kName,kSrc,kPrec].includes(k) && String(r[k] ?? '').trim() !== '') extra[k] = String(r[k]); });
+    const base = { id:`c${i}_${stamp}`, name, extra };
     let lat, lng;
     if (kLat && kLng) { lat = num(r[kLat]); lng = num(r[kLng]); }
     if ((isNaN(lat) || isNaN(lng)) && kCoord) {
       const p = String(r[kCoord]).split(/[,;\s]+/).map(num).filter(n => !isNaN(n));
       if (p.length >= 2) { lat = p[0]; lng = p[1]; }
     }
-    if (isNaN(lat) || isNaN(lng)) { skipped++; return; }
-    if (lat < -80 && lng > 10 && lng < 35) [lat, lng] = [lng, lat];           // columnas invertidas
-    if (lng > 80 && lng < 120) lng = -lng;                                     // falta el signo negativo
-    if (lat < 10 || lat > 34 || lng < -120 || lng > -84) { skipped++; return; } // fuera de México
-    const extra = {};
-    keys.forEach(k => { if (![kLat,kLng,kCoord,kName].includes(k) && String(r[k] ?? '').trim() !== '') extra[k] = String(r[k]); });
-    out.push({ id: 'c' + i + '_' + Math.round(lat*1e5) + '_' + Math.round(lng*1e5), name: kName ? String(r[kName] || `Cliente ${i+1}`) : `Cliente ${i+1}`, lat, lng, extra });
+    if (!isNaN(lat) && !isNaN(lng)) {
+      if (lat < -80 && lng > 10 && lng < 35) [lat, lng] = [lng, lat];   // columnas invertidas
+      if (lng > 80 && lng < 120) lng = -lng;                             // falta el signo negativo
+    }
+    if (!isNaN(lat) && !isNaN(lng) && inMx(lat, lng)) {
+      const o = norm(kSrc ? r[kSrc] : '');   // si es un Excel exportado por esta app, conserva el origen
+      const src = o.includes('campo') ? 'campo' : o.includes('direccion') ? 'direccion' : 'excel';
+      out.push({ ...base, lat, lng, src, ...(src === 'direccion' && kPrec && r[kPrec] ? { level:String(r[kPrec]) } : {}) });
+      return;
+    }
+    const parts = addrKeys.map(k => String(r[k] ?? '').trim()).filter(Boolean);
+    const cp = kCP ? String(r[kCP] ?? '').trim() : '';
+    if (cp) parts.push('C.P. ' + cp);
+    if (parts.length) { if (!/m[eé]xico/i.test(parts.join(' '))) parts.push('México'); pending.push({ ...base, q:parts.join(', ') }); }
+    else skipped++;
   });
-  if (!out.length) { toast('Ninguna fila tiene coordenadas válidas dentro de México.', 5000); return; }
+  if (!out.length && !pending.length) { toast('Ninguna fila tiene coordenadas válidas ni dirección para buscar.', 5000); return; }
+  const token = ++importToken;
   clearSelection();
-  clients = out; store.set('rc_clients', clients);
+  const nCoord = out.length;
+  clients = out.slice(); unlocated = []; save();
   renderClients();
   follow = false; updateLocateBtn();
-  map.fitBounds(L.latLngBounds(clients.map(c => [c.lat, c.lng])).pad(.15), { maxZoom:15 });
-  toast(`Se cargaron ${out.length} clientes${skipped ? ` · ${skipped} filas sin coordenadas válidas` : ''}.`, 4500);
+  if (clients.length) map.fitBounds(L.latLngBounds(clients.map(c => [c.lat, c.lng])).pad(.15), { maxZoom:15 });
   $('#drawer').hidden = true;
+  let found = 0;
+  if (pending.length) {
+    found = await geocodeAll(pending, token);
+    if (token !== importToken) return;
+    if (clients.length) map.fitBounds(L.latLngBounds(clients.map(c => [c.lat, c.lng])).pad(.15), { maxZoom:15 });
+  }
+  const parts = [`${nCoord} con coordenadas`];
+  if (pending.length) parts.push(`${found} ubicados por dirección (aproximados)`);
+  if (pending.length - found) parts.push(`${pending.length - found} sin encontrar`);
+  if (skipped) parts.push(`${skipped} sin coordenadas ni dirección`);
+  toast(`Clientes cargados: ${parts.join(' · ')}.`, 7000);
+}
+
+/* ---------- Búsqueda por dirección ---------- */
+const inMx = (lat, lng) => lat >= 10 && lat <= 34 && lng >= -120 && lng <= -84;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function fetchJson(url, ms = 10000){
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+  try { const r = await fetch(url, { signal:ctl.signal }); if (!r.ok) throw new Error(r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+const ESRI_LEVEL = { PointAddress:'domicilio exacto', Subaddress:'domicilio exacto', StreetAddress:'calle y número aproximado', StreetAddressExt:'calle y número aproximado',
+  StreetInt:'cruce de calles', StreetMidBlock:'calle', StreetName:'calle (sin número)', POI:'lugar conocido', Locality:'colonia o localidad',
+  Neighborhood:'colonia', District:'colonia', PostalExt:'código postal', Postal:'código postal', PostalLoc:'código postal' };
+const OSM_LEVEL = { house:'domicilio exacto', building:'domicilio exacto', road:'calle (sin número)', neighbourhood:'colonia', suburb:'colonia', quarter:'colonia',
+  hamlet:'localidad', village:'localidad', town:'localidad', city:'ciudad (zona general)', municipality:'municipio (zona general)', postcode:'código postal' };
+async function geocode(q){   // regresa {lat,lng,level}, null si no existe, o 'error' si no hubo conexión
+  let failed = false;
+  try {
+    const j = await fetchJson('https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&maxLocations=1&countryCode=MEX&outFields=Addr_type&SingleLine=' + encodeURIComponent(q));
+    const c = j.candidates && j.candidates[0];
+    if (c && c.score >= 60 && inMx(c.location.y, c.location.x))
+      return { lat:c.location.y, lng:c.location.x, level: ESRI_LEVEL[c.attributes?.Addr_type] || 'zona general' };
+    if (j.error) failed = true;
+  } catch { failed = true; }
+  try {   // respaldo: OpenStreetMap (máximo una consulta por segundo)
+    await sleep(1100);
+    const j = await fetchJson('https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=mx&limit=1&q=' + encodeURIComponent(q));
+    if (j[0] && inMx(+j[0].lat, +j[0].lon)) return { lat:+j[0].lat, lng:+j[0].lon, level: OSM_LEVEL[j[0].addresstype] || 'zona general' };
+    return null;
+  } catch { return failed ? 'error' : null; }
+}
+async function geocodeAll(list, token){
+  const cache = store.get('rc_geocache', {});
+  let found = 0, i = 0;
+  for (const c of list) {
+    if (token !== importToken) return found;
+    i++; toast(`Buscando direcciones en el mapa: ${i} de ${list.length}…`, 60000);
+    let g = cache[c.q];
+    if (g === undefined) { g = await geocode(c.q); if (g !== 'error') cache[c.q] = g; }
+    if (token !== importToken) return found;
+    if (g && g !== 'error') { clients.push({ ...c, lat:g.lat, lng:g.lng, src:'direccion', level:g.level }); found++; }
+    else unlocated.push(c);
+    if (i % 10 === 0 || i === list.length) { save(); store.set('rc_geocache', cache); renderClients(); }
+  }
+  return found;
+}
+async function retryGeocode(c){
+  if (!c.q) { toast('Este cliente no tiene dirección en el Excel.'); return; }
+  toast('Buscando la dirección…', 15000);
+  const cache = store.get('rc_geocache', {}); delete cache[c.q];
+  const g = await geocode(c.q);
+  if (g === 'error') { toast('Sin conexión. Intenta de nuevo cuando tengas señal.'); return; }
+  cache[c.q] = g; store.set('rc_geocache', cache);
+  if (!g) { toast('Tampoco se encontró. Fija su ubicación cuando estés en el domicilio.', 5000); return; }
+  setClientLocation(c, g.lat, g.lng, 'direccion', g.level);
+  toast(`Ubicada por dirección (nivel: ${g.level}).`, 4000);
+}
+function exportExcel(){
+  const all = [...clients, ...unlocated];
+  if (!all.length) { toast('No hay clientes para exportar.'); return; }
+  const keys = [...new Set(all.flatMap(c => Object.keys(c.extra)))];
+  const SRC = { excel:'Excel original', direccion:'Buscada por dirección (aproximada)', campo:'Verificada en campo' };
+  const rows = all.map(c => Object.assign({
+    'Nombre': c.name, 'Latitud': c.lat ?? '', 'Longitud': c.lng ?? '',
+    'Origen de la ubicación': c.lat == null ? 'Sin ubicar' : (SRC[c.src] || SRC.excel),
+    'Precisión': c.src === 'direccion' ? (c.level || '') : ''
+  }, Object.fromEntries(keys.map(k => [k, c.extra[k] ?? '']))));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Clientes');
+  XLSX.writeFile(wb, `clientes_con_ubicacion_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 $('#file').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
@@ -362,11 +535,11 @@ $('#file').addEventListener('change', e => {
 });
 function downloadTemplate(){
   const ws = XLSX.utils.aoa_to_sheet([
-    ['Nombre','Latitud','Longitud','Teléfono','Dirección','Grupo','Sucursal'],
-    ['María López Gómez', 16.73702, -92.63757, '9671234567', 'Calle Real de Guadalupe 12, San Cristóbal', 'Grupo Las Flores', 'San Cristóbal'],
-    ['Rosa Hernández Pérez', 16.75305, -93.11518, '9619876543', 'Av. Central Pte. 450, Tuxtla Gutiérrez', 'Grupo Esperanza', 'Tuxtla']
+    ['Nombre','Latitud','Longitud','Teléfono','Dirección','Colonia','Municipio','Estado','CP','Grupo'],
+    ['María López Gómez', 16.73702, -92.63757, '9671234567', 'Calle Real de Guadalupe 12', 'Centro', 'San Cristóbal de las Casas', 'Chiapas', '29200', 'Grupo Las Flores'],
+    ['Rosa Hernández Pérez', '', '', '9619876543', 'Av. Central Pte. 450', 'Centro', 'Tuxtla Gutiérrez', 'Chiapas', '29000', 'Grupo Esperanza']
   ]);
-  ws['!cols'] = [{wch:26},{wch:11},{wch:11},{wch:13},{wch:40},{wch:18},{wch:14}];
+  ws['!cols'] = [{wch:26},{wch:11},{wch:11},{wch:13},{wch:30},{wch:16},{wch:26},{wch:10},{wch:8},{wch:18}];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Clientes');
   XLSX.writeFile(wb, 'plantilla_clientes.xlsx');
 }
@@ -676,6 +849,25 @@ function renderSheet(){
     const isTel = /tel|cel|movil|whats/.test(norm(k)) && /\d{7,}/.test(v.replace(/\D/g,''));
     return `<div class="kv"><span>${esc(k)}</span><span>${isTel ? `<a href="tel:${esc(v.replace(/[^\d+]/g,''))}">${esc(v)}</a>` : esc(v)}</span></div>`;
   }).join('');
+  const icHere = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>`;
+  if (c.lat == null) {
+    sh.className = '';
+    sh.innerHTML = `<div class="grab"></div>
+      <div class="s-head"><h2>${esc(c.name)}</h2><button class="x" data-act="close" aria-label="Cerrar">${icClose}</button></div>
+      <div class="loc warn"><b>No se encontró su dirección en el mapa.</b><span>${esc(c.q || 'El Excel no trae dirección.')}</span></div>
+      ${kv ? `<div class="details">${kv}</div>` : ''}
+      <div class="actions">
+        <button class="btn primary" data-act="here">${icHere}Guardar mi ubicación aquí</button>
+        <button class="btn second" data-act="retry">Buscar de nuevo</button>
+      </div>
+      <p class="hint">Cuando estés en el domicilio, toca “Guardar mi ubicación aquí” y quedará fijo en el mapa.</p>`;
+    return;
+  }
+  const LOC = { excel:'Ubicación tomada del Excel', campo:'Ubicación verificada en campo' };
+  const locBox = `<div class="loc ${c.src === 'direccion' ? 'warn' : ''}">
+      <b>${c.src === 'direccion' ? `Ubicación aproximada, buscada por dirección (${esc(c.level || 'zona general')})` : LOC[c.src] || LOC.excel}</b>
+      <div class="loc-b"><button data-act="here">${icHere}Usar mi ubicación actual</button><button data-act="drag">Mover pin</button></div>
+    </div>`;
   const group = groupOf(c);
   const chips = group.length > 1 ? `<div class="same">
       <div class="same-lbl">${group.length} clientes en esta misma ubicación</div>
@@ -690,6 +882,7 @@ function renderSheet(){
       <button data-act="mode" data-mode="car" class="${mode==='car'?'on':''}">En auto</button>
       <button data-act="mode" data-mode="foot" class="${mode==='foot'?'on':''}">A pie</button>
     </div>
+    ${locBox}
     ${kv ? `<div class="details">${kv}</div>` : ''}
     <div class="actions">
       <button class="btn primary" id="btnStart" data-act="start" ${route ? '' : 'disabled'}>
@@ -702,6 +895,23 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act;
   if (a === 'close') clearSelection();
+  else if (a === 'export') exportExcel();
+  else if (a === 'retry' && selected) retryGeocode(selected);
+  else if (a === 'here' && selected) {
+    if (!userLL) { startGPS(); toast('Esperando tu ubicación. Activa el GPS e inténtalo de nuevo.'); return; }
+    const acc = Math.round(userAcc);
+    const msg = acc > 50 ? `Tu GPS tiene una precisión de ±${acc} m, puede quedar algo movido. ¿Guardar de todos modos como la ubicación de ${selected.name}?`
+                         : `¿Guardar tu ubicación actual como la de ${selected.name}?`;
+    if (confirm(msg)) { setClientLocation(selected, userLL.lat, userLL.lng, 'campo'); toast('Ubicación guardada.'); }
+  }
+  else if (a === 'drag' && selected && markers[selected.id]) {
+    const c = selected, m = markers[c.id];
+    follow = false; updateLocateBtn();
+    map.setView(m.getLatLng(), Math.max(map.getZoom(), 17));
+    m.dragging.enable();
+    toast('Mantén presionado el pin y arrástralo al lugar correcto.', 5000);
+    m.once('dragend', () => { m.dragging.disable(); const ll = m.getLatLng(); setClientLocation(c, ll.lat, ll.lng, 'campo'); toast('Ubicación corregida.'); });
+  }
   else if (a === 'pick') { const x = clients.find(k => k.id === b.dataset.id); if (x) selectClient(x); }
   else if (a === 'start') startNav();
   else if (a === 'stop') stopNav();
@@ -720,17 +930,22 @@ $('#drawer').addEventListener('click', e => {
   const it = e.target.closest('.item'); if (!it) return;
   const c = clients.find(x => x.id === it.dataset.id);
   $('#drawer').hidden = true;
-  if (c) { map.setView([c.lat, c.lng], 16); selectClient(c); }
+  if (c) { map.setView([c.lat, c.lng], 16); selectClient(c); return; }
+  const u = unlocated.find(x => x.id === it.dataset.id);
+  if (u) openUnlocated(u);
 });
 $('#search').addEventListener('input', renderList);
-$('#fLayer').onclick = () => {
-  sat = !sat; store.set('rc_sat', sat);
-  if (sat) { map.removeLayer(baseCalles); baseSat.addTo(map); } else { map.removeLayer(baseSat); baseCalles.addTo(map); }
-  $('#fLayer').classList.toggle('on', sat);
-  const tag = $('#layerTag'); tag.textContent = sat ? 'Satélite' : 'Calles'; tag.classList.add('show');
-  setTimeout(() => tag.classList.remove('show'), 1400);
-};
-$('#fLayer').classList.toggle('on', sat);
+$('#styleMenu').innerHTML = '<div class="sm-title">Estilo del mapa</div>' +
+  [['auto', { name:'Automático día/noche', sw:'linear-gradient(135deg,#f4efe4 50%,#2b2d33 50%)' }], ...Object.entries(STYLES)]
+  .map(([k, st]) => `<button data-style="${k}"><span class="sw" style="background:${st.sw}"></span>${st.name}</button>`).join('');
+$('#fLayer').onclick = e => { e.stopPropagation(); $('#styleMenu').hidden = !$('#styleMenu').hidden; };
+$('#styleMenu').addEventListener('click', e => {
+  const b = e.target.closest('[data-style]'); if (!b) return;
+  styleChoice = b.dataset.style; store.set('rc_style', styleChoice);
+  applyStyle(); $('#styleMenu').hidden = true;
+});
+document.addEventListener('click', e => { if (!e.target.closest('#styleMenu, #fLayer')) $('#styleMenu').hidden = true; });
+applyStyle();
 function paintVoice(){ $('#fVoice').classList.toggle('on', voiceOn); $('#voiceWave').style.display = voiceOn ? '' : 'none'; }
 $('#fVoice').onclick = () => { voiceOn = !voiceOn; store.set('rc_voice', voiceOn); paintVoice(); toast(voiceOn ? 'Voz activada' : 'Voz desactivada', 1500); };
 paintVoice();
