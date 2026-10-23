@@ -8,9 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>Ruta de clientes</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
@@ -191,10 +189,8 @@ let follow = true, nav = false, mode = store.get('rc_mode', 'car');
 let route = null, routing = false, offCount = 0, lastReroute = 0, pendingRoute = false;
 let voiceOn = store.get('rc_voice', true), lastSpoken = -1, spokeNear = false, wakeLock = null;
 
-const cluster = L.markerClusterGroup({
-  showCoverageOnHover:false, maxClusterRadius:50, spiderfyOnMaxZoom:true,
-  iconCreateFunction: c => L.divIcon({ html:`<div class="cl">${c.getChildCount()}</div>`, className:'cl-wrap', iconSize:[40,40] })
-}).addTo(map);
+// Pines sueltos, sin agrupar
+const cluster = L.layerGroup().addTo(map);
 const routeCasing = L.polyline([], { color:'#ffffff', weight:11, opacity:.95, lineCap:'round', lineJoin:'round' });
 const routeLine = L.polyline([], { color:'#0F1376', weight:7, opacity:.95, lineCap:'round', lineJoin:'round' });
 const accCircle = L.circle([0,0], { radius:1, color:'#1a73e8', weight:1, fillColor:'#1a73e8', fillOpacity:.12, interactive:false });
