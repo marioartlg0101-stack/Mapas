@@ -9,6 +9,7 @@
 <title>Ruta de clientes</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{
@@ -102,7 +103,8 @@ body.navigating #fabs{top:calc(var(--st) + 104px)}
 .cl{width:40px;height:40px;border-radius:50%;background:var(--navy);color:#fff;font-weight:700;font-size:14px;display:grid;place-items:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .me{position:relative;width:24px;height:24px}
 .me .dot{position:absolute;inset:3px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.4)}
-.me .cone{position:absolute;left:-14px;top:-30px;width:52px;height:52px;transform-origin:26px 42px;opacity:0;transition:transform .4s}
+.me .cone{position:absolute;left:-14px;top:-30px;width:52px;height:52px;transform-origin:26px 42px;opacity:0}
+#needle{transition:transform .15s linear}
 .me .cone.show{opacity:1}
 
 .pin{position:relative}
@@ -151,6 +153,8 @@ body.sheet-open #toast{bottom:calc(var(--sb) + 200px)}
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>
   <button class="fab" id="fLocate" aria-label="Seguir mi ubicación">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+  <button class="fab" id="fCompass" aria-label="Girar el mapa con mi dirección"><span class="tag" id="compassTag"></span>
+    <svg viewBox="0 0 24 24" id="needle"><path d="M12 2l4 10h-8z" fill="#e53935"/><path d="M12 22l-4-10h8z" fill="currentColor" opacity=".55"/></svg></button>
   <button class="fab on" id="fVoice" aria-label="Instrucciones por voz">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4V5z"/><path id="voiceWave" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></button>
 </div>
@@ -181,7 +185,7 @@ const store = {
 };
 
 /* ---------- Mapa ---------- */
-const map = L.map('map', { zoomControl:false, minZoom:4, maxBounds:[[3,-130],[40,-74]], maxBoundsViscosity:.6 })
+const map = L.map('map', { zoomControl:false, minZoom:4, rotate:true, bearing:0, rotateControl:false, touchRotate:false })
   .setView([23.6,-102.5], 5);
 map.attributionControl.setPrefix(false);
 // Mapa de calles de Esri (no pide clave ni encabezado Referer; funciona también abriendo el archivo local).
@@ -201,6 +205,7 @@ let selected = null, markers = {};
 let userLL = null, userAcc = 0, lastLL = null, heading = null, watchId = null, firstFix = true;
 let follow = true, nav = false, mode = store.get('rc_mode', 'car');
 let route = null, routing = false, offCount = 0, lastReroute = 0, pendingRoute = false;
+let rotateOn = store.get('rc_rotate', true), lastInteract = 0, gpsSpeed = 0, compassHeading = null, compassAt = 0, compassStarted = false, lastApply = 0;
 let voiceOn = store.get('rc_voice', true), lastSpoken = -1, spokeNear = false, wakeLock = null;
 
 // Pines sueltos, sin agrupar
@@ -282,6 +287,7 @@ function renderList(){
     : `<p style="padding:16px;color:var(--muted)">${clients.length ? 'Ningún cliente coincide con la búsqueda.' : 'Aún no hay clientes. Carga tu Excel con las columnas Nombre, Latitud y Longitud.'}</p>`;
 }
 function selectClient(c){
+  startCompass();
   if (selected && spotKey(selected) === spotKey(c)) { selected = c; renderSheet(); return; }
   if (nav) stopNav();
   if (selected) setPin(selected, false);
@@ -336,6 +342,7 @@ function importRows(rows){
   clearSelection();
   clients = out; store.set('rc_clients', clients);
   renderClients();
+  follow = false; updateLocateBtn();
   map.fitBounds(L.latLngBounds(clients.map(c => [c.lat, c.lng])).pad(.15), { maxZoom:15 });
   toast(`Se cargaron ${out.length} clientes${skipped ? ` · ${skipped} filas sin coordenadas válidas` : ''}.`, 4500);
   $('#drawer').hidden = true;
@@ -380,36 +387,101 @@ function onPos(p){
   const ll = L.latLng(p.coords.latitude, p.coords.longitude);
   userAcc = p.coords.accuracy || 0;
   const spd = p.coords.speed;
-  if (p.coords.heading != null && !isNaN(p.coords.heading) && spd > .8) heading = p.coords.heading;
+  if (spd != null && !isNaN(spd)) gpsSpeed = spd;
+  if (p.coords.heading != null && !isNaN(p.coords.heading) && gpsSpeed > .8) heading = p.coords.heading;
   else if (lastLL && lastLL.distanceTo(ll) > 5) heading = bearing(lastLL, ll);
   if (!lastLL || lastLL.distanceTo(ll) > 5) lastLL = ll;
   userLL = ll;
 
   meMarker.setLatLng(ll); accCircle.setLatLng(ll).setRadius(userAcc);
   if (!map.hasLayer(meMarker)) { accCircle.addTo(map); meMarker.addTo(map); }
-  const cone = meMarker.getElement()?.querySelector('.cone');
-  if (cone && heading != null) { cone.classList.add('show'); cone.style.transform = `rotate(${heading}deg)`; }
 
   if (firstFix) {
-    firstFix = false; updateLocateBtn();
-    if (!selected && !clients.length) map.setView(ll, 15);
-    renderList();
+    firstFix = false;
+    if (follow) map.setView(ll, 16);
+    updateLocateBtn(); renderList();
   }
-  if (follow && (nav || !selected || !route)) {
-    if (nav) map.setView(ll, Math.max(map.getZoom(), 17), { animate:true });
-    else if (!firstFixFollowedOnce) { firstFixFollowedOnce = true; if (!clients.length) map.setView(ll, 15); }
-    else if (!selected) map.panTo(ll, { animate:true });
-  }
+  // Si hay ruta y no tocas el mapa en 10 s, vuelve a centrarte solo
+  if (!follow && (route || nav) && Date.now() - lastInteract > 10000) { follow = true; updateLocateBtn(); }
+  applyHeading(true);
+  if (follow) followView(ll);
+  updateCone();
   if (pendingRoute && selected && !routing) { pendingRoute = false; planRoute(); }
   if (route) updateProgress(ll);
 }
-let firstFixFollowedOnce = false;
-map.on('dragstart', () => { if (follow) { follow = false; updateLocateBtn(); } });
+
+/* ---------- Seguimiento y giro del mapa ---------- */
+const angDiff = (a, b) => ((a - b + 540) % 360) - 180;
+function currentHeading(){
+  if (gpsSpeed >= 2 && heading != null) return heading;                        // en movimiento: rumbo del GPS
+  if (compassHeading != null && Date.now() - compassAt < 1500) return compassHeading; // parado o caminando: brújula
+  return heading;
+}
+function followView(ll){
+  const z = map.getZoom() < 14 ? (nav ? 17 : 16) : map.getZoom();
+  let c = ll; const h = currentHeading();
+  if (nav && h != null) { // en navegación te deja en la parte baja de la pantalla para ver lo que viene
+    const mpp = 40075016.686 * Math.cos(rad(ll.lat)) / Math.pow(2, z + 8);
+    const d = map.getSize().y * 0.2 * mpp;
+    c = L.latLng(ll.lat + d * Math.cos(rad(h)) / 111320, ll.lng + d * Math.sin(rad(h)) / (111320 * Math.cos(rad(ll.lat))));
+  }
+  map.setView(c, z, { animate:true, duration:.6 });
+}
+function applyHeading(fromGps){
+  const h = currentHeading(); if (h == null) return;
+  const now = Date.now(); if (!fromGps && now - lastApply < 80) return; lastApply = now;
+  if (follow && rotateOn) {
+    const cur = map.getBearing(), target = (360 - h) % 360, d = angDiff(target, cur);
+    if (Math.abs(d) > 2) map.setBearing(cur + d * (fromGps ? 1 : .4));
+  }
+}
+function updateCone(){
+  const h = currentHeading(), cone = meMarker.getElement()?.querySelector('.cone');
+  if (cone && h != null) { cone.classList.add('show'); cone.style.transform = `rotate(${h + map.getBearing()}deg)`; }
+}
+function updateCompassBtn(){
+  $('#needle').style.transform = `rotate(${map.getBearing()}deg)`;
+  $('#fCompass').classList.toggle('on', rotateOn);
+}
+map.on('rotate', () => { updateCone(); updateCompassBtn(); });
+function onOrient(e){
+  let h = null;
+  if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;
+  else if (e.absolute && e.alpha != null) h = 360 - e.alpha;
+  if (h == null) return;
+  const so = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+  h = (h + so + 360) % 360;
+  compassHeading = compassHeading == null ? h : (compassHeading + angDiff(h, compassHeading) * .25 + 360) % 360;
+  compassAt = Date.now();
+  applyHeading(false); updateCone();
+}
+async function startCompass(){
+  if (compassStarted) return;
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      if (await DeviceOrientationEvent.requestPermission() !== 'granted') return; // iPhone pide permiso
+    }
+  } catch { return; }
+  compassStarted = true;
+  if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', onOrient);
+  else window.addEventListener('deviceorientation', onOrient);
+}
+map.on('dragstart', () => { lastInteract = Date.now(); if (follow) { follow = false; updateLocateBtn(); } });
 function updateLocateBtn(){ $('#fLocate').classList.toggle('on', follow && !!userLL); }
 $('#fLocate').onclick = () => {
-  if (!userLL) { startGPS(); toast('Buscando tu ubicación…'); return; }
+  startCompass();
+  if (!userLL) { follow = true; startGPS(); toast('Buscando tu ubicación…'); return; }
   follow = true; updateLocateBtn();
   map.setView(userLL, Math.max(map.getZoom(), nav ? 17 : 16), { animate:true });
+  applyHeading(true); followView(userLL);
+};
+$('#fCompass').onclick = () => {
+  startCompass();
+  rotateOn = !rotateOn; store.set('rc_rotate', rotateOn);
+  if (!rotateOn) map.setBearing(0); else applyHeading(true);
+  updateCompassBtn(); updateCone();
+  const tag = $('#compassTag'); tag.textContent = rotateOn ? 'Gira contigo' : 'Norte arriba'; tag.classList.add('show');
+  setTimeout(() => tag.classList.remove('show'), 1500);
 };
 
 /* ---------- Rutas ---------- */
@@ -455,7 +527,7 @@ async function planRoute(isReroute = false){
     route = r; offCount = 0;
     routeCasing.setLatLngs(r.coords).addTo(map); routeLine.setLatLngs(r.coords).addTo(map);
     if (!isReroute && !nav) {
-      follow = false; updateLocateBtn();
+      follow = false; lastInteract = Date.now(); updateLocateBtn();
       map.fitBounds(routeLine.getBounds(), { paddingTopLeft:[30, 80], paddingBottomRight:[70, 260], maxZoom:17 });
     }
     if (isReroute) lastSpoken = -1;
@@ -548,10 +620,11 @@ function updateBanner(along){
 /* ---------- Navegación ---------- */
 async function startNav(){
   if (!route || !userLL) { toast('Esperando tu ubicación para iniciar…'); return; }
-  nav = true; follow = true; lastSpoken = -1; updateLocateBtn();
+  nav = true; follow = true; lastSpoken = -1; updateLocateBtn(); startCompass();
   document.body.classList.add('navigating');
   $('#topbar').hidden = true; $('#navbar').hidden = false;
-  map.setView(userLL, 17, { animate:true });
+  map.setView(userLL, 17, { animate:false });
+  applyHeading(true); followView(userLL);
   renderSheet(); updateProgress(userLL);
   try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
 }
@@ -664,6 +737,9 @@ paintVoice();
 
 /* ---------- Inicio ---------- */
 renderClients();
+follow = !clients.length;
+updateCompassBtn();
+if (!/iPhone|iPad|iPod/.test(navigator.userAgent)) startCompass();
 if (clients.length) map.fitBounds(L.latLngBounds(clients.map(c => [c.lat, c.lng])).pad(.15), { maxZoom:15 });
 startGPS();
 })();
